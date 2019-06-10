@@ -1,22 +1,22 @@
 {-# LANGUAGE OverloadedStrings, OverloadedLabels #-}
 
 import qualified GI.Gtk as Gtk
+import Graphics.Rendering.Cairo
 import Data.GI.Base
+import Data.Text
 import Data.IORef
 
 data Funcionete = Funcionete {
-    name :: String,
-    pattern :: String,
+    name :: Text,
+    pattern :: Text,
     backgroundColor :: (Double, Double, Double),
     foregroundColor :: (Double, Double, Double),
     law :: (Double, Double) -> (Double, Double),
-    visebleLaw :: String
+    visebleLaw :: Text
 }
 
 main :: IO ()
 main = do
-
-  -- Program data --
 
   pos <- newIORef [(40.0, 40.0)]
   pos2 <- newIORef (-40.0, 40.0)
@@ -57,8 +57,6 @@ main = do
   box <- new Gtk.Box [#orientation := Gtk.OrientationVertical]
   #add win box
 
-  -- Toolbox section --
-
   toolBox <- new Gtk.Box [#orientation := Gtk.OrientationHorizontal]
   #add box toolBox
 
@@ -76,9 +74,8 @@ main = do
   selector <- Gtk.comboBoxTextNew
   #add toolBox selector
 
-  --fillSelector selector fs
-
-  -- Program body section --
+  fillSelector selector fs
+  Gtk.comboBoxSetActive selector 0
 
   leftVisor <- Gtk.drawingAreaNew
   #add box leftVisor
@@ -86,14 +83,29 @@ main = do
   rightVisor <- Gtk.drawingAreaNew
   #add box rightVisor
 
+  Gtk.widgetQueueDraw leftVisor
+  Gtk.widgetQueueDraw rightVisor
+
+  --renderWith leftVisor $ clear 10 10 (255/255,239/255,175/255)
+  --Gtk.onWidgetDraw leftVisor $ clear 10 10 (255/255,239/255,175/255)
+
   #showAll win
 
   Gtk.main
 
---fillSelector :: Gtk.ComboBoxText -> [Funcionete] -> IO ()
---fillSelector sel (f:[]) = do
---          Gtk.comboBoxTextAppend sel Nothing (name f)
---          return ()
---fillSelector sel (f:fs) = do
---          Gtk.comboBoxTextAppend sel Nothing (name f)
---          fillSelector sel fs
+fillSelector :: Gtk.ComboBoxText -> [Funcionete] -> IO ()
+fillSelector sel (f:[]) = do
+          Gtk.comboBoxTextAppend sel Nothing (name f)
+          return ()
+fillSelector sel (f:fs) = do
+          Gtk.comboBoxTextAppend sel Nothing (name f)
+          fillSelector sel fs
+
+clear :: Double -> Double -> (Double, Double, Double) -> Render ()
+clear largura altura (r, g, b) = do
+    setSourceRGB r g b
+    paint
+    --Create a circle in the center
+    setSourceRGB 0.7 0.7 0.7
+    arc (0.5 * largura) (0.5 * altura) 3 0 (2*pi)
+    stroke
