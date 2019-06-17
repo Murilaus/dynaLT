@@ -12,8 +12,9 @@ import GI.Cairo
 import GI.Gdk
 import Control.Monad.Trans.Reader (ReaderT(..))
 import Graphics.Rendering.Cairo.Types (Cairo(..))
-import Foreign.Ptr (castPtr)
+import Foreign.Ptr (castPtr, Ptr(..))
 import Graphics.Rendering.Cairo.Internal (Render(..))
+import Graphics.UI.Gtk.Gdk.EventM
 
 data Funcionete = Funcionete {
     name :: Text,
@@ -75,16 +76,16 @@ main = do
   trailButton <- new Gtk.ToggleToolButton [#label := "Trail"]
   #add toolBox trailButton
 
-  frameButton <- new Gtk.ToggleToolButton [#label := "Frame"]
-  #add toolBox frameButton
+  formulaButton <- new Gtk.ToggleToolButton [#label := "Formula"]
+  #add toolBox formulaButton
 
   comboLabel <- new Gtk.Label [#label := "Function:"]
   #add toolBox comboLabel
   selector <- Gtk.comboBoxTextNew
   #add toolBox selector
 
-  debugLabel <- Gtk.labelNew Nothing
-  #add toolBox debugLabel
+  formula <- Gtk.labelNew Nothing
+  #add toolBox formula
 
   fillSelector selector fs
   Gtk.comboBoxSetActive selector 0
@@ -127,6 +128,8 @@ main = do
   --Gtk.widgetAddEvents leftViewer [EventMaskButtonMotionMask]
   --leftViewer `on` buttonPressEvent $ touch leftViewer pos moving frameButton pos2 moving2
   --leftViewer `on` motionNotifyEvent $ drag leftViewer pos moving pos2 moving2
+  on selector #changed $ updateFormula formulaButton selector fs formula
+  on formulaButton #toggled $ updateFormula formulaButton selector fs formula
 
   #showAll win
 
@@ -144,11 +147,22 @@ fillSelector sel (f:fs) = do
           Gtk.comboBoxTextAppend sel Nothing (name f)
           fillSelector sel fs
 
+updateFormula :: Gtk.ToggleToolButton -> Gtk.ComboBoxText -> [Funcionete] -> Gtk.Label -> IO ()
+updateFormula showFormula sel fs lawLabel = do
+        doShow <- Gtk.toggleToolButtonGetActive showFormula
+        if doShow
+          then do
+            selection <- Gtk.comboBoxGetActive sel
+            Gtk.labelSetText lawLabel (": T(x,y) = " <> (visebleLaw (Prelude.head (Prelude.drop (fromIntegral selection) fs))))
+            --Gtk.labelSetText lawLabel (": T(x,y) = ")
+          else do
+            Gtk.labelSetText lawLabel " "
+
 -- touch :: Gtk.DrawingArea -> IORef [(Double, Double)] -> IORef Bool
---  -> Gtk.ToggleToolButton -> IORef (Double, Double) -> IORef Bool -> EventM EButton Bool
+--   -> Gtk.ToggleToolButton -> IORef (Double, Double) -> IORef Bool -> EventM EButton Bool
 -- touch viewer posIO movingIO turnF pos2IO moving2IO = do
---   xT <- getPointX
---   yT <- getPointY
+--   (xT, yT) <- Gtk.widgetGetPointer
+--
 --   liftIO $ do
 --     (width, height) <- Gtk.widgetGetSizeRequest viewer
 --     let xT' = xT - 0.5 * (fromIntegral width)
@@ -178,8 +192,9 @@ fillSelector sel (f:fs) = do
 --             ->     IORef Bool
 --             ->     EventM EMotion Bool
 -- drag viewer posIO movingIO pos2IO moving2IO = do
---         x <- getPointX
---         y <- getPointY
+--         -- x <- getPointX
+--         -- y <- getPointY
+--         (x,y) <- Gtk.widgetGetPointer
 --         let ec = (x,y)
 --         liftIO $ do
 --           (width, height) <- Gtk.widgetGetSizeRequest viewer
@@ -198,14 +213,55 @@ fillSelector sel (f:fs) = do
 --               then writeIORef pos2IO (xT', yT')
 --               else return ()
 --
+--           -- <- widgetGetDrawWindow viewer
+--           -- glass (GI.Gdk.Rectangle 0 0 width height) True
 --           Gtk.widgetQueueDraw viewer
 --
 --         return True
 
---confineEvent :: (Double, Double) -> Double -> Double -> (Double, Double)
+-- released   ::      Gtk.DrawingArea
+--            ->      IORef [(Double, Double)]
+--            ->      IORef Bool
+--            ->      IORef (Double, Double)
+--            ->      IORef Bool
+--            ->      EventM EButton Bool
+-- released viewer posIO movingIO pos2IO moving2IO= do
+--         ec <- Gtk.widgetGetPointer
+--         liftIO $ do
+--         (width, height) <- widgetGetSize visor
+--         let (xT, yT) = confinaEvento ec (fromIntegral width) (fromIntegral height)
+--             xT' = xT - 0.5 * (fromIntegral width)
+--             yT' = - yT + 0.5 * (fromIntegral height)
+--
+--         moving <- readIORef movingIO
+--         if moving
+--             then do lisPos <- readIORef posIO
+--                     writeIORef posIO ((xT', yT'):lisPos)
+--                     writeIORef movingIO False
+--             else return ()
+--
+--         moving2 <- readIORef moving2IO
+--         if moving2
+--             then do writeIORef pos2IO (xT', yT')
+--                     writeIORef moving2IO False
+--             else return ()
+--
+--         Gtk.widgetQueueDraw viewer
+--
+--         return True
+
+confineEvent :: (Double, Double) -> Double -> Double -> (Double, Double)
 confineEvent (x,y) width height = (xN, yN)
         where xN = if x <= 0 then 0 else if x>= width then width else x
               yN = if y <= 0 then 0 else if y>= height then height else y
+
+parallels :: (Double, Double) -> (Double, Double) -> Bool
+parallels (x1, y1) (x2, y2) =  ((delta  <= 5) && (delta  >= -5)) ||
+                               ((delta2 <= 5) && (delta2 >= -5))
+        where alfa1 =  truncate $ (180/pi) * atan (y1/x1)
+              alfa2 =  truncate $ (180/pi) * atan (y2/x2)
+              delta =  abs (alfa1 - alfa2)
+              delta2 = delta - 180
 
 clear :: Double -> Double -> (Double, Double, Double) -> Render ()
 clear width height (r, g, b) = do
@@ -217,3 +273,74 @@ drawPin width height (x,y) (r, g, b) = do
     setSourceRGB r g b
     arc (0.5 * width + x) (0.5 * height - y) 3 0 (2*pi)
     fill
+
+drawElastic     :: Double
+                -> Double
+                -> (Double, Double)
+                -> (Double, Double, Double)
+                ->  Render ()
+drawElastic width height (x,y) (r, g, b) = do
+    setSourceRGB r g b
+    moveTo (0.5 * width) (0.5 * height)
+    lineTo (0.5 * width + x) (0.5 * height - y)
+    stroke
+
+turnOnElastic   :: Double
+                -> Double
+                -> (Double, Double)
+                ->  Render ()
+turnOnElastic width height (x,y) = do
+    setSourceRGB 0 1 1
+    let esp = 7
+        alfa = if x == 0 then -pi/2 else - atan (y/x)
+    if x >= 0
+      then do
+        arcNegative (0.5 * width)     (0.5 * height)     esp (alfa - pi/2) (alfa - 3* pi/2)
+        arcNegative (0.5 * width + x) (0.5 * height - y) esp (alfa + pi/2) (alfa - pi/2)
+        arcNegative (0.5 * width)     (0.5 * height)     esp (alfa - pi/2) (alfa - 3* pi/2)
+        stroke
+      else do
+        arc (0.5 * width)     (0.5 * height)     esp (alfa - pi/2) (alfa - 3* pi/2)
+        arc (0.5 * width + x) (0.5 * height - y) esp (alfa + pi/2) (alfa - pi/2)
+        arc (0.5 * width)     (0.5 * height)     esp (alfa - pi/2) (alfa - 3* pi/2)
+        stroke
+
+drawText     :: Double
+             -> Double
+             -> (Double, Double)
+             -> (Double, Double, Double)
+             -> String
+             -> Render ()
+drawText width height (x,y) (r, g, b) text = do
+    setSourceRGB r g b
+    textSize <- textExtents text
+    let alfa = if x == 0 then pi/2 else if x > 0 then atan (y/x) else atan (y/x) + pi
+        l_texto = textExtentsWidth textSize
+        a_texto = textExtentsHeight textSize
+    moveTo (0.5 * width + (1.1 * x) + 3 * (x/(abs x + 1)) - (l_texto/2) * (1 - cos alfa))
+           (0.5 * height  - (1.1 * y) - 3 * (y/(abs y + 1)) + (a_texto/2) * (1 - sin alfa))
+    showText text
+    stroke
+
+
+drawTrail      :: Double
+                -> Double
+                -> [(Double, Double)]
+                -> (Double, Double, Double)
+                ->  Render ()
+drawTrail width height lista (r, g, b) = do
+    setSourceRGB r g b
+    moveTo (0.5 * width + (fst (Prelude.head lista))) (0.5 * height - (snd (Prelude.head lista)))
+    continueTrail width height (Prelude.tail lista)
+    stroke
+
+continueTrail   :: Double
+                -> Double
+                -> [(Double, Double)]
+                ->  Render ()
+continueTrail width height [] = do return ()
+
+continueTrail width height (p@(x,y):ps) = do
+    lineTo (0.5 * width + x) (0.5 * height - y)
+    continueTrail width height ps
+    stroke
