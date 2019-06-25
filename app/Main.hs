@@ -16,7 +16,7 @@ import Foreign.Ptr (castPtr, Ptr(..))
 import Graphics.Rendering.Cairo.Internal (Render(..))
 import Graphics.UI.Gtk.Gdk.EventM
 
-data Funcionete = Funcionete {
+data DLT = DLT {
     name :: Text,
     pattern :: Text,
     backgroundColor :: (Double, Double, Double),
@@ -34,26 +34,26 @@ main = do
   moving <- newIORef False
   moving2 <- newIORef False
 
-  let fs = [Funcionete "Avança 15 min"
-                       "chanfrado"
+  let dlts = [DLT "Drunk"
+                       "bevelled"
                        (255/255,239/255,175/255)
                        (0/255,209/255, 222/255)
                        (\(x,y) -> (y,-x))
                        "(y,-x)",
-            Funcionete "Ladeira"
-                       "chanfrado"
+            DLT "Slope"
+                       "bevelled"
                        (1,1,1)
                        (22/255,25/255,188/255)
                        (\(x,y) -> (x - (2*y), y - (0.5*x)))
                        "(x-2y,y-x/2)",
-            Funcionete "Espelho"
-                       "chanfrado"
+            DLT "Mirror"
+                       "bevelled"
                        (196/255,255/255,252/255)
                        (0,0,0)
                        (\(x,y) -> (-x,y))
                        "(-x,y)",
-            Funcionete "Descola"
-                       "chanfrado"
+            DLT "Glue"
+                       "bevelled"
                        (213/255,255/255,209/255)
                        (1,0,0)
                        (\(x,y) -> (0.7 * x + 0.4 * y + 30 , 0.3 * y - 0.1 * x - 25))
@@ -61,7 +61,7 @@ main = do
 
   Gtk.init Nothing
 
-  win <- new Gtk.Window [ #title := "dynaLT", #defaultWidth := 675, #defaultHeight := 350 ]
+  win <- new Gtk.Window [ #title := "dynaLT", #defaultWidth := 600, #defaultHeight := 325 ]
   on win #destroy Gtk.mainQuit
 
   box <- new Gtk.Box [#orientation := Gtk.OrientationVertical]
@@ -76,6 +76,9 @@ main = do
   trailButton <- new Gtk.ToggleToolButton [#label := "Trail"]
   #add toolBox trailButton
 
+  frameButton <- new Gtk.ToggleToolButton [#label := "Frame"]
+  #add toolBox frameButton
+
   formulaButton <- new Gtk.ToggleToolButton [#label := "Formula"]
   #add toolBox formulaButton
 
@@ -87,41 +90,41 @@ main = do
   formula <- Gtk.labelNew Nothing
   #add toolBox formula
 
-  fillSelector selector fs
+  fillSelector selector dlts
   Gtk.comboBoxSetActive selector 0
 
-  canvas <- new Gtk.Box [#orientation := Gtk.OrientationHorizontal]
+  canvas <- new Gtk.Box [#orientation := Gtk.OrientationHorizontal, #homogeneous := True]
+  Gtk.widgetSetVexpand canvas True
   #add box canvas
 
   leftViewer <- Gtk.drawingAreaNew
   #add canvas leftViewer
 
-  Gtk.widgetSetSizeRequest leftViewer 300 300
-
   rightViewer <- Gtk.drawingAreaNew
   #add canvas rightViewer
 
-  Gtk.widgetSetSizeRequest rightViewer 300 300
-
   on leftViewer #draw $ \context -> do
     renderWithContext context $ do
-      drawLeft leftViewer parallelButton trailButton formulaButton pos pos2 selector fs
+      drawLeft leftViewer parallelButton trailButton frameButton pos pos2 selector dlts
     return True
 
   on rightViewer #draw $ \context -> do
     renderWithContext context $ do
-      drawRight rightViewer parallelButton trailButton formulaButton pos pos2 selector fs
+      drawRight rightViewer parallelButton trailButton frameButton pos pos2 selector dlts
     return True
 
-  --on leftViewer #buttonPressEvent $ touch leftViewer pos moving formulaButton pos2 moving2
   Gtk.widgetAddEvents leftViewer [EventMaskPointerMotionMask]
   Gtk.widgetAddEvents leftViewer [EventMaskButtonPressMask]
   Gtk.widgetAddEvents leftViewer [EventMaskButtonReleaseMask]
-  on leftViewer #buttonPressEvent $ \e -> touch e leftViewer pos moving formulaButton pos2 moving2
+  on leftViewer #buttonPressEvent $ \e -> touch e leftViewer pos moving frameButton pos2 moving2
   on leftViewer #motionNotifyEvent $ \e -> drag e leftViewer rightViewer pos moving pos2 moving2
   on leftViewer #buttonReleaseEvent $ \e -> released e leftViewer pos moving pos2 moving2
-  on selector #changed $ updateFormula formulaButton selector fs formula
-  on formulaButton #toggled $ updateFormula formulaButton selector fs formula
+  on selector #changed $ updateFormula formulaButton selector dlts formula
+  on formulaButton #toggled $ updateFormula formulaButton selector dlts formula
+  on trailButton #toggled $ clearTrail pos leftViewer
+  on frameButton #toggled $ do
+    Gtk.widgetQueueDraw leftViewer
+    Gtk.widgetQueueDraw rightViewer
 
   #showAll win
 
@@ -131,34 +134,30 @@ renderWithContext :: GI.Cairo.Context -> Render () -> IO ()
 renderWithContext ct r = withManagedPtr ct $ \p ->
                          runReaderT (runRender r) (Cairo (castPtr p))
 
-fillSelector :: Gtk.ComboBoxText -> [Funcionete] -> IO ()
-fillSelector sel (f:[]) = do
-          Gtk.comboBoxTextAppend sel Nothing (name f)
+fillSelector :: Gtk.ComboBoxText -> [DLT] -> IO ()
+fillSelector sel (dlt:[]) = do
+          Gtk.comboBoxTextAppend sel Nothing (name dlt)
           return ()
-fillSelector sel (f:fs) = do
-          Gtk.comboBoxTextAppend sel Nothing (name f)
-          fillSelector sel fs
+fillSelector sel (dlt:dlts) = do
+          Gtk.comboBoxTextAppend sel Nothing (name dlt)
+          fillSelector sel dlts
 
-updateFormula :: Gtk.ToggleToolButton -> Gtk.ComboBoxText -> [Funcionete] -> Gtk.Label -> IO ()
-updateFormula showFormula sel fs lawLabel = do
+updateFormula :: Gtk.ToggleToolButton -> Gtk.ComboBoxText -> [DLT] -> Gtk.Label -> IO ()
+updateFormula showFormula sel dlts lawLabel = do
         doShow <- Gtk.toggleToolButtonGetActive showFormula
         if doShow
           then do
             selection <- Gtk.comboBoxGetActive sel
-            Gtk.labelSetText lawLabel (": T(x,y) = " <> (visebleLaw (Prelude.head (Prelude.drop (fromIntegral selection) fs))))
-            --Gtk.labelSetText lawLabel (": T(x,y) = ")
+            Gtk.labelSetText lawLabel (": T(x,y) = " <> (visebleLaw (Prelude.head (Prelude.drop (fromIntegral selection) dlts))))
           else do
             Gtk.labelSetText lawLabel " "
 
--- touch :: Gtk.DrawingArea -> IORef [(Double, Double)] -> IORef Bool
---   -> Gtk.ToggleToolButton -> IORef (Double, Double) -> IORef Bool -> IO Bool
 touch e viewer posIO movingIO turnF pos2IO moving2IO = do
   xT <- getEventButtonX e
   yT <- getEventButtonY e
-  putStrLn "touch"
-  putStrLn $ "drag"++ show xT ++ " " ++ show yT
 
-  (width, height) <- Gtk.widgetGetSizeRequest viewer
+  width <- Gtk.widgetGetAllocatedWidth viewer
+  height <- Gtk.widgetGetAllocatedHeight viewer
   let xT' = xT - 0.5 * (fromIntegral width)
       yT' = - yT + 0.5 * (fromIntegral height)
 
@@ -179,18 +178,13 @@ touch e viewer posIO movingIO turnF pos2IO moving2IO = do
     else return ()
   return True
 
--- drag     ::     Gtk.DrawingArea
---             ->     IORef [(Double, Double)]
---             ->     IORef Bool
---             ->     IORef (Double, Double)
---             ->     IORef Bool
---             ->     IO Bool
 drag e leftViewer rightViewer posIO movingIO pos2IO moving2IO = do
         x <- getEventMotionX e
         y <- getEventMotionY e
 
         let ec = (x,y)
-        (width, height) <- Gtk.widgetGetSizeRequest leftViewer
+        width <- Gtk.widgetGetAllocatedWidth leftViewer
+        height <- Gtk.widgetGetAllocatedHeight leftViewer
         let (xT, yT) = confineEvent ec (fromIntegral width) (fromIntegral height)
             xT' = xT - 0.5 * (fromIntegral width)
             yT' = - yT + 0.5 * (fromIntegral height)
@@ -211,12 +205,6 @@ drag e leftViewer rightViewer posIO movingIO pos2IO moving2IO = do
 
         return True
 
--- released   ::      Gtk.DrawingArea
---            ->      IORef [(Double, Double)]
---            ->      IORef Bool
---            ->      IORef (Double, Double)
---            ->      IORef Bool
---            ->      IO Bool
 released e viewer posIO movingIO pos2IO moving2IO = do
         x0 <- getEventButtonX e
         y0 <- getEventButtonY e
@@ -224,7 +212,8 @@ released e viewer posIO movingIO pos2IO moving2IO = do
             y = y0
             ec = (x,y)
 
-        (width, height) <- Gtk.widgetGetSizeRequest viewer
+        width <- Gtk.widgetGetAllocatedWidth viewer
+        height <- Gtk.widgetGetAllocatedHeight viewer
         let (xT, yT) = confineEvent ec (fromIntegral width) (fromIntegral height)
             xT' = xT - 0.5 * (fromIntegral width)
             yT' = - yT + 0.5 * (fromIntegral height)
@@ -286,21 +275,22 @@ drawRight :: Gtk.DrawingArea
           -> IORef [(Double, Double)]
           -> IORef (Double, Double)
           -> Gtk.ComboBoxText
-          -> [Funcionete]
+          -> [DLT]
           -> Render ()
-drawRight rightViewer turnP turnT turnF posIO pos2IO sel fs = do
+drawRight rightViewer turnP turnT turnF posIO pos2IO sel dlts = do
 
           lisPos <- liftIO $ readIORef posIO
           let pos = Prelude.head lisPos
           pos2 <- liftIO $ readIORef pos2IO
-          size <- liftIO $ Gtk.widgetGetSizeRequest rightViewer
           sizeselection <- liftIO $ fromIntegral <$> Gtk.comboBoxGetActive sel
           showP <- liftIO $ Gtk.toggleToolButtonGetActive turnP
           showT <- liftIO $ Gtk.toggleToolButtonGetActive turnT
           showF <- liftIO $ Gtk.toggleToolButtonGetActive turnF
-          let width = fromIntegral $ fst $ size
-              height  = fromIntegral $ snd $ size
-              f =  Prelude.head $ Prelude.drop sizeselection fs
+          sizeX <- Gtk.widgetGetAllocatedWidth rightViewer
+          sizeY <- Gtk.widgetGetAllocatedHeight rightViewer
+          let width = fromIntegral $ sizeX
+              height  = fromIntegral $ sizeY
+              f =  Prelude.head $ Prelude.drop sizeselection dlts
               color = foregroundColor f
           clear width height (backgroundColor f)
           drawPin width height ((law f) pos) color
@@ -347,20 +337,21 @@ drawLeft  :: Gtk.DrawingArea
           -> IORef [(Double, Double)]
           -> IORef (Double, Double)
           -> Gtk.ComboBoxText
-          -> [Funcionete]
+          -> [DLT]
           -> Render ()
-drawLeft leftViewer turnP turnT turnF posIO pos2IO sel fs = do
+drawLeft leftViewer turnP turnT turnF posIO pos2IO sel dlts = do
           lisPos <- liftIO $ readIORef posIO
           let pos = Prelude.head lisPos
           pos2 <- liftIO $ readIORef pos2IO
-          size <- liftIO $ Gtk.widgetGetSizeRequest leftViewer
           sizeselection <- liftIO $ fromIntegral <$> Gtk.comboBoxGetActive sel
           showP <- liftIO $ Gtk.toggleToolButtonGetActive turnP
           showT <- liftIO $ Gtk.toggleToolButtonGetActive turnT
           showF <- liftIO $ Gtk.toggleToolButtonGetActive turnF
-          let width = fromIntegral $ fst $ size
-              height  = fromIntegral $ snd $ size
-              f =  Prelude.head $ Prelude.drop sizeselection fs
+          sizeX <- Gtk.widgetGetAllocatedWidth leftViewer
+          sizeY <- Gtk.widgetGetAllocatedHeight leftViewer
+          let width = fromIntegral $ sizeX
+              height  = fromIntegral $ sizeY
+              f =  Prelude.head $ Prelude.drop sizeselection dlts
               color = foregroundColor f
           clear width height (backgroundColor f)
           drawPin width height pos color
@@ -394,6 +385,9 @@ clear :: Double -> Double -> (Double, Double, Double) -> Render ()
 clear width height (r, g, b) = do
     setSourceRGB r g b
     paint
+    setSourceRGB 0.7 0.7 0.7
+    arc (0.5 * width) (0.5 * height) 3 0 (2*pi)
+    stroke
 
 drawPin :: Double -> Double -> (Double, Double) -> (Double, Double, Double) -> Render ()
 drawPin width height (x,y) (r, g, b) = do
@@ -429,16 +423,21 @@ drawText width height (x,y) (r, g, b) text = do
     showText text
     stroke
 
+clearTrail pos viewer =
+        do
+            lisPos <- readIORef pos
+            writeIORef pos [Prelude.head lisPos]
+            Gtk.widgetQueueDraw viewer
 
 drawTrail      :: Double
                 -> Double
                 -> [(Double, Double)]
                 -> (Double, Double, Double)
                 ->  Render ()
-drawTrail width height lista (r, g, b) = do
+drawTrail width height list (r, g, b) = do
     setSourceRGB r g b
-    moveTo (0.5 * width + (fst (Prelude.head lista))) (0.5 * height - (snd (Prelude.head lista)))
-    continueTrail width height (Prelude.tail lista)
+    moveTo (0.5 * width + (fst (Prelude.head list))) (0.5 * height - (snd (Prelude.head list)))
+    continueTrail width height (Prelude.tail list)
     stroke
 
 continueTrail   :: Double
